@@ -13,6 +13,11 @@ export const users = pgTable("users", {
   role: text("role").default("user").notNull(),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
+  fullName: text("full_name"),
+  email: text("email"),
+  phone: text("phone"),
+  facebookUrl: text("facebook_url"),
+  zaloUrl: text("zalo_url"),
 });
 
 export const products = pgTable("products", {

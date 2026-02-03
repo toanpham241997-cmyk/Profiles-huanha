@@ -78,6 +78,23 @@ export async function registerRoutes(
     res.json(user || null);
   });
 
+  app.patch(api.auth.update.path, async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const updates = insertUserSchema.partial().parse(req.body);
+      const user = await storage.updateUser(req.session.userId, updates);
+      res.json(user);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ message: err.errors[0].message });
+      } else {
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    }
+  });
+
   // Product Routes
   app.get(api.products.list.path, async (req, res) => {
     const category = req.query.category as string | undefined;

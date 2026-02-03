@@ -51,6 +51,16 @@ export const api = {
         200: z.custom<typeof users.$inferSelect | null>(),
       },
     },
+    update: {
+      method: 'PATCH' as const,
+      path: '/api/user',
+      input: insertUserSchema.partial(),
+      responses: {
+        200: z.custom<typeof users.$inferSelect>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.unauthorized,
+      },
+    },
   },
   products: {
     list: {
