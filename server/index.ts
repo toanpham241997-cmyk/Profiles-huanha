@@ -3,6 +3,10 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
+// ✅ ADD: Drizzle migrate
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { db } from "./db";
+
 const app = express();
 const httpServer = createServer(app);
 
@@ -15,7 +19,7 @@ declare module "http" {
 app.use(
   express.json({
     verify: (req, _res, buf) => {
-      req.rawBody = buf;
+      (req as any).rawBody = buf;
     },
   }),
 );
@@ -39,9 +43,9 @@ app.use((req, res, next) => {
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
+  res.json = function (bodyJson: any, ...args: any[]) {
     capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
+    return (originalResJson as any).apply(res, [bodyJson, ...args]);
   };
 
   res.on("finish", () => {
@@ -51,7 +55,6 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       log(logLine);
     }
   });
@@ -59,7 +62,22 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ ADD: run migrations before starting routes
+async function runMigrations() {
+  try {
+    log("Running database migrations...", "migrate");
+    await migrate(db, { migrationsFolder: "drizzle" });
+    log("Database migrations complete ✅", "migrate");
+  } catch (err) {
+    console.error("❌ Migration failed:", err);
+    throw err; // nếu migrate fail thì app fail (đỡ chạy sai dữ liệu)
+  }
+}
+
 (async () => {
+  // ✅ IMPORTANT: migrate first
+  await runMigrations();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -75,9 +93,6 @@ app.use((req, res, next) => {
     return res.status(status).json({ message });
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -85,10 +100,6 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
