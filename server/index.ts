@@ -2,9 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-
-// ✅ ADD: Drizzle migrate
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db } from "./db";
 
 const app = express();
@@ -62,21 +59,53 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ ADD: run migrations before starting routes
-async function runMigrations() {
+/**
+ * ✅ Init DB without drizzle migrations (no meta/_journal.json needed)
+ * This avoids Render shell and drizzle-kit requirements.
+ */
+async function initDb() {
   try {
-    log("Running database migrations...", "migrate");
-    await migrate(db, { migrationsFolder: "drizzle" });
-    log("Database migrations complete ✅", "migrate");
+    log("Ensuring database tables exist...", "db");
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'user' NOT NULL,
+        avatar_url TEXT,
+        bio TEXT,
+        full_name TEXT,
+        email TEXT,
+        phone TEXT,
+        facebook_url TEXT,
+        zalo_url TEXT
+      );
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        price NUMERIC NOT NULL,
+        category TEXT NOT NULL,
+        image_url TEXT NOT NULL,
+        link TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT now()
+      );
+    `);
+
+    log("Database init complete ✅", "db");
   } catch (err) {
-    console.error("❌ Migration failed:", err);
-    throw err; // nếu migrate fail thì app fail (đỡ chạy sai dữ liệu)
+    console.error("❌ Database init failed:", err);
+    throw err;
   }
 }
 
 (async () => {
-  // ✅ IMPORTANT: migrate first
-  await runMigrations();
+  // ✅ IMPORTANT: create tables first so routes won't crash
+  await initDb();
 
   await registerRoutes(httpServer, app);
 
@@ -93,6 +122,7 @@ async function runMigrations() {
     return res.status(status).json({ message });
   });
 
+  // Production: serve built static files
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
@@ -100,6 +130,7 @@ async function runMigrations() {
     await setupVite(httpServer, app);
   }
 
+  // ✅ Render uses PORT env
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {
